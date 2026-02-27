@@ -1,0 +1,22 @@
+name = "swtiles-proxy"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+# R2 bucket binding
+[[r2_buckets]]
+binding = "TILES_BUCKET"
+bucket_name = "tiles"
+
+# Environment variables
+[vars]
+# Add your production domains here (comma-separated)
+# Localhost is always allowed for development
+# Supports wildcard subdomains: *.pages.dev
+ALLOWED_ORIGINS = "https://swe3d.com,https://www.swe3d.com"
+
+# Example with domains configured:
+# ALLOWED_ORIGINS = "https://myapp.com,https://myapp.pages.dev,https://*.pages.dev"
+
+# Optional: Production environment with different origins
+# [env.production.vars]
+# ALLOWED_ORIGINS = "https://myapp.com"

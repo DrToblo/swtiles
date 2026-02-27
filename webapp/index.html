@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SWTILES Viewer</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1a2e;
+      color: #eee;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      background: #16213e;
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      flex-wrap: wrap;
+      border-bottom: 1px solid #0f3460;
+    }
+
+    h1 {
+      font-size: 1.2rem;
+      font-weight: 500;
+    }
+
+    .controls {
+      display: flex;
+      gap: 15px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .control-group {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    label {
+      font-size: 0.85rem;
+      color: #aaa;
+    }
+
+    input {
+      background: #0f3460;
+      border: 1px solid #1a1a2e;
+      color: #eee;
+      padding: 6px 10px;
+      border-radius: 4px;
+      width: 120px;
+      font-size: 0.9rem;
+    }
+
+    input:focus {
+      outline: none;
+      border-color: #e94560;
+    }
+
+    button {
+      background: #e94560;
+      color: white;
+      border: none;
+      padding: 6px 15px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      transition: background 0.2s;
+    }
+
+    button:hover {
+      background: #ff6b6b;
+    }
+
+    button:disabled {
+      background: #555;
+      cursor: not-allowed;
+    }
+
+    button.active {
+      background: #4CAF50;
+    }
+
+    button.active:hover {
+      background: #66BB6A;
+    }
+
+    .dataset-toggle {
+      display: flex;
+      gap: 5px;
+      padding: 3px;
+      background: #0f3460;
+      border-radius: 6px;
+    }
+
+    .dataset-toggle button {
+      padding: 6px 12px;
+      background: transparent;
+      color: #aaa;
+    }
+
+    .dataset-toggle button:hover {
+      background: rgba(255,255,255,0.1);
+      color: #fff;
+    }
+
+    .dataset-toggle button.active {
+      background: #e94560;
+      color: white;
+    }
+
+    .info {
+      margin-left: auto;
+      font-size: 0.85rem;
+      color: #aaa;
+    }
+
+    .info span {
+      color: #e94560;
+      font-family: monospace;
+    }
+
+    #viewer-container {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      background: #0a0a0a;
+    }
+
+    #canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      cursor: grab;
+    }
+
+    #canvas:active {
+      cursor: grabbing;
+    }
+
+    #status {
+      position: absolute;
+      bottom: 10px;
+      left: 10px;
+      background: rgba(0, 0, 0, 0.7);
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      font-family: monospace;
+    }
+
+    #loading {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0, 0, 0, 0.8);
+      padding: 20px 30px;
+      border-radius: 8px;
+      text-align: center;
+    }
+
+    .spinner {
+      width: 30px;
+      height: 30px;
+      border: 3px solid #333;
+      border-top-color: #e94560;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 10px;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    #error {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(233, 69, 96, 0.9);
+      padding: 20px 30px;
+      border-radius: 8px;
+      text-align: center;
+      max-width: 400px;
+      display: none;
+    }
+
+    .zoom-controls {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .zoom-controls button {
+      width: 36px;
+      height: 36px;
+      padding: 0;
+      font-size: 1.2rem;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>SWTILES Viewer</h1>
+    <div class="dataset-toggle">
+      <button id="btn-ortho" class="active">Orthophoto</button>
+      <button id="btn-terrain">Terrain</button>
+    </div>
+    <div class="controls">
+      <div class="control-group">
+        <label>E:</label>
+        <input type="number" id="input-e" placeholder="Easting">
+      </div>
+      <div class="control-group">
+        <label>N:</label>
+        <input type="number" id="input-n" placeholder="Northing">
+      </div>
+      <button id="btn-goto">Go</button>
+      <button id="btn-stockholm">Stockholm</button>
+      <button id="btn-gothenburg">Gothenburg</button>
+      <button id="btn-malmo">Malmo</button>
+    </div>
+    <div class="info">
+      <span id="dataset-info">Orthophoto</span> | <span id="tile-info">--</span> | Zoom: <span id="zoom-info">1.0x</span>
+    </div>
+  </header>
+
+  <div id="viewer-container">
+    <canvas id="canvas"></canvas>
+    <div id="status">Loading...</div>
+    <div id="loading">
+      <div class="spinner"></div>
+      <div>Loading SWTILES...</div>
+    </div>
+    <div id="error"></div>
+    <div class="zoom-controls">
+      <button id="btn-zoom-in">+</button>
+      <button id="btn-zoom-out">-</button>
+    </div>
+  </div>
+
+  <script type="module">
+    import { SwtilesReader } from './swtiles.js';
+
+    // Configuration
+    const WORKER_URL = 'https://swtiles-proxy.tobias-cornvik.workers.dev';
+
+    const DATASETS = {
+      ortho: {
+        file: 'Karta_10000_webp.swtiles',
+        name: 'Orthophoto',
+      },
+      terrain: {
+        file: 'Karta_Hojd_Sverige.swtiles',
+        name: 'Terrain',
+      },
+    };
+
+    // Swedish city coordinates (SWEREF 99 TM / EPSG:3006)
+    const LOCATIONS = {
+      stockholm: { e: 674242, n: 6580381 },
+      gothenburg: { e: 319195, n: 6399337 },
+      malmo: { e: 374935, n: 6163220 },
+    };
+
+    // Viewer state
+    let currentDataset = 'ortho';
+    let reader = null;
+    let level = null;
+    let canvas, ctx;
+    let viewCenterE, viewCenterN;
+    let zoom = 1;
+    let isDragging = false;
+    let dragStartX, dragStartY;
+    let dragStartE, dragStartN;
+
+    // Tile cache (per dataset)
+    const tileCaches = {
+      ortho: new Map(),
+      terrain: new Map(),
+    };
+    let tileCache = tileCaches.ortho;
+    const loadingTiles = new Set();
+
+    // DOM elements
+    const container = document.getElementById('viewer-container');
+    const statusEl = document.getElementById('status');
+    const loadingEl = document.getElementById('loading');
+    const errorEl = document.getElementById('error');
+    const tileInfoEl = document.getElementById('tile-info');
+    const zoomInfoEl = document.getElementById('zoom-info');
+    const datasetInfoEl = document.getElementById('dataset-info');
+    const inputE = document.getElementById('input-e');
+    const inputN = document.getElementById('input-n');
+    const btnOrtho = document.getElementById('btn-ortho');
+    const btnTerrain = document.getElementById('btn-terrain');
+
+    function showError(message) {
+      errorEl.textContent = message;
+      errorEl.style.display = 'block';
+      loadingEl.style.display = 'none';
+    }
+
+    function hideError() {
+      errorEl.style.display = 'none';
+    }
+
+    /**
+     * Switch to a different dataset
+     */
+    async function switchDataset(datasetKey) {
+      if (currentDataset === datasetKey && reader) return;
+
+      // Save current position
+      const savedE = viewCenterE;
+      const savedN = viewCenterN;
+      const savedZoom = zoom;
+
+      currentDataset = datasetKey;
+      tileCache = tileCaches[datasetKey];
+      loadingTiles.clear();
+
+      // Update UI
+      btnOrtho.classList.toggle('active', datasetKey === 'ortho');
+      btnTerrain.classList.toggle('active', datasetKey === 'terrain');
+      datasetInfoEl.textContent = DATASETS[datasetKey].name;
+
+      // Show loading
+      loadingEl.style.display = 'block';
+      hideError();
+
+      try {
+        // Initialize new reader
+        reader = new SwtilesReader(`${WORKER_URL}/${DATASETS[datasetKey].file}`);
+        await reader.init();
+
+        level = reader.getLevel(0);
+        if (!level) {
+          throw new Error('No levels found in SWTILES file');
+        }
+
+        level.tileSizePx = reader.header.tileSizePx;
+
+        console.log(`Switched to ${DATASETS[datasetKey].name}:`, reader.header);
+
+        // Restore position or use center of bounds
+        if (savedE && savedN) {
+          viewCenterE = savedE;
+          viewCenterN = savedN;
+          zoom = savedZoom;
+        } else {
+          const bounds = reader.header.bounds;
+          viewCenterE = (bounds.minE + bounds.maxE) / 2;
+          viewCenterN = (bounds.minN + bounds.maxN) / 2;
+        }
+
+        loadingEl.style.display = 'none';
+        render();
+
+      } catch (err) {
+        console.error('Failed to switch dataset:', err);
+        showError(`Failed to load ${DATASETS[datasetKey].name}: ${err.message}`);
+      }
+    }
+
+    function updateStatus(text) {
+      statusEl.textContent = text;
+    }
+
+    function resizeCanvas() {
+      canvas.width = container.clientWidth;
+      canvas.height = container.clientHeight;
+      render();
+    }
+
+    /**
+     * Convert world coordinates to screen coordinates
+     */
+    function worldToScreen(e, n) {
+      const metersPerPixel = level.tileExtentM / level.tileSizePx / zoom;
+      const x = (e - viewCenterE) / metersPerPixel + canvas.width / 2;
+      const y = (viewCenterN - n) / metersPerPixel + canvas.height / 2;
+      return { x, y };
+    }
+
+    /**
+     * Convert screen coordinates to world coordinates
+     */
+    function screenToWorld(x, y) {
+      const metersPerPixel = level.tileExtentM / level.tileSizePx / zoom;
+      const e = viewCenterE + (x - canvas.width / 2) * metersPerPixel;
+      const n = viewCenterN - (y - canvas.height / 2) * metersPerPixel;
+      return { e, n };
+    }
+
+    /**
+     * Get cache key for a tile
+     */
+    function tileKey(row, col) {
+      return `${row},${col}`;
+    }
+
+    /**
+     * Load a tile and cache it
+     */
+    async function loadTile(row, col) {
+      const key = tileKey(row, col);
+
+      if (tileCache.has(key) || loadingTiles.has(key)) {
+        return;
+      }
+
+      loadingTiles.add(key);
+
+      try {
+        const tile = await reader.getTile(level.levelId, row, col);
+        if (tile) {
+          const img = new Image();
+          const url = URL.createObjectURL(tile.blob);
+
+          await new Promise((resolve, reject) => {
+            img.onload = () => {
+              URL.revokeObjectURL(url);
+              tileCache.set(key, { img, bounds: tile.bounds });
+              resolve();
+            };
+            img.onerror = reject;
+            img.src = url;
+          });
+
+          render();
+        } else {
+          // Mark empty tiles so we don't try again
+          tileCache.set(key, null);
+        }
+      } catch (err) {
+        console.error(`Failed to load tile ${row},${col}:`, err);
+      } finally {
+        loadingTiles.delete(key);
+      }
+    }
+
+    /**
+     * Render the map
+     */
+    function render() {
+      if (!ctx || !level) return;
+
+      // Clear canvas
+      ctx.fillStyle = '#1a1a1a';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Calculate visible bounds
+      const topLeft = screenToWorld(0, 0);
+      const bottomRight = screenToWorld(canvas.width, canvas.height);
+
+      // Get tiles in view
+      const tiles = reader.getTilesInView(
+        level.levelId,
+        topLeft.e,
+        bottomRight.n,
+        bottomRight.e,
+        topLeft.n
+      );
+
+      // Render tiles
+      let loadedCount = 0;
+      let totalCount = tiles.length;
+
+      for (const { row, col, bounds } of tiles) {
+        const key = tileKey(row, col);
+        const cached = tileCache.get(key);
+
+        if (cached === null) {
+          // Empty tile
+          continue;
+        }
+
+        if (cached) {
+          // Draw cached tile
+          const tl = worldToScreen(bounds.minE, bounds.maxN);
+          const br = worldToScreen(bounds.maxE, bounds.minN);
+          const width = br.x - tl.x;
+          const height = br.y - tl.y;
+
+          ctx.drawImage(cached.img, tl.x, tl.y, width, height);
+          loadedCount++;
+        } else {
+          // Load tile
+          loadTile(row, col);
+
+          // Draw placeholder
+          const tl = worldToScreen(bounds.minE, bounds.maxN);
+          const br = worldToScreen(bounds.maxE, bounds.minN);
+          ctx.fillStyle = '#2a2a2a';
+          ctx.fillRect(tl.x, tl.y, br.x - tl.x, br.y - tl.y);
+          ctx.strokeStyle = '#333';
+          ctx.strokeRect(tl.x, tl.y, br.x - tl.x, br.y - tl.y);
+        }
+      }
+
+      // Update UI
+      const center = screenToWorld(canvas.width / 2, canvas.height / 2);
+      const { row, col } = reader.coordToRowCol(level, center.e, center.n);
+
+      tileInfoEl.textContent = `E: ${Math.round(center.e)}, N: ${Math.round(center.n)} | Row: ${row}, Col: ${col}`;
+      zoomInfoEl.textContent = `${zoom.toFixed(1)}x`;
+      updateStatus(`Tiles: ${loadedCount}/${totalCount} loaded | Cache: ${tileCache.size}`);
+
+      // Update coordinate inputs
+      inputE.value = Math.round(center.e);
+      inputN.value = Math.round(center.n);
+    }
+
+    /**
+     * Go to coordinates
+     */
+    function goToCoord(e, n) {
+      viewCenterE = e;
+      viewCenterN = n;
+      render();
+    }
+
+    /**
+     * Handle zoom
+     */
+    function setZoom(newZoom, pivotX, pivotY) {
+      newZoom = Math.max(0.1, Math.min(10, newZoom));
+
+      if (pivotX !== undefined && pivotY !== undefined) {
+        // Zoom around pivot point
+        const worldBefore = screenToWorld(pivotX, pivotY);
+        zoom = newZoom;
+        const worldAfter = screenToWorld(pivotX, pivotY);
+        viewCenterE += worldBefore.e - worldAfter.e;
+        viewCenterN += worldBefore.n - worldAfter.n;
+      } else {
+        zoom = newZoom;
+      }
+
+      render();
+    }
+
+    /**
+     * Initialize the viewer
+     */
+    async function init() {
+      canvas = document.getElementById('canvas');
+      ctx = canvas.getContext('2d');
+
+      // Set up canvas
+      resizeCanvas();
+      window.addEventListener('resize', resizeCanvas);
+
+      // Mouse events for panning
+      canvas.addEventListener('mousedown', (e) => {
+        isDragging = true;
+        dragStartX = e.clientX;
+        dragStartY = e.clientY;
+        dragStartE = viewCenterE;
+        dragStartN = viewCenterN;
+      });
+
+      window.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+
+        const metersPerPixel = level.tileExtentM / level.tileSizePx / zoom;
+        const dx = e.clientX - dragStartX;
+        const dy = e.clientY - dragStartY;
+
+        viewCenterE = dragStartE - dx * metersPerPixel;
+        viewCenterN = dragStartN + dy * metersPerPixel;
+
+        render();
+      });
+
+      window.addEventListener('mouseup', () => {
+        isDragging = false;
+      });
+
+      // Wheel zoom
+      canvas.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        const factor = e.deltaY > 0 ? 0.9 : 1.1;
+        setZoom(zoom * factor, x, y);
+      });
+
+      // Dataset toggle buttons
+      btnOrtho.addEventListener('click', () => switchDataset('ortho'));
+      btnTerrain.addEventListener('click', () => switchDataset('terrain'));
+
+      // Navigation buttons
+      document.getElementById('btn-goto').addEventListener('click', () => {
+        const e = parseFloat(inputE.value);
+        const n = parseFloat(inputN.value);
+        if (!isNaN(e) && !isNaN(n)) {
+          goToCoord(e, n);
+        }
+      });
+
+      document.getElementById('btn-stockholm').addEventListener('click', () => {
+        goToCoord(LOCATIONS.stockholm.e, LOCATIONS.stockholm.n);
+      });
+
+      document.getElementById('btn-gothenburg').addEventListener('click', () => {
+        goToCoord(LOCATIONS.gothenburg.e, LOCATIONS.gothenburg.n);
+      });
+
+      document.getElementById('btn-malmo').addEventListener('click', () => {
+        goToCoord(LOCATIONS.malmo.e, LOCATIONS.malmo.n);
+      });
+
+      document.getElementById('btn-zoom-in').addEventListener('click', () => {
+        setZoom(zoom * 1.5);
+      });
+
+      document.getElementById('btn-zoom-out').addEventListener('click', () => {
+        setZoom(zoom / 1.5);
+      });
+
+      // Keyboard shortcuts
+      window.addEventListener('keydown', (e) => {
+        if (e.key === '+' || e.key === '=') setZoom(zoom * 1.2);
+        if (e.key === '-') setZoom(zoom / 1.2);
+      });
+
+      // Load initial dataset
+      await switchDataset('ortho');
+    }
+
+    init();
+  </script>
+</body>
+</html>

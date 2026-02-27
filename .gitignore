@@ -1,0 +1,36 @@
+# Environments
+.env
+.venv/
+__pycache__/
+
+# Lantmäteriet API Caches
+token_cache.json
+token_cache.lock
+
+# Downloader State
+mosaik_state.json
+mosaik_state.lock
+
+# Raw & Processed Data (Gigabytes of data)
+Karta_Hojd_Sverige/
+Karta_10000_webp/
+Karta_Hojd_Sverige_tiled/
+Karta_10000_webp_tiled/
+*.swtiles
+
+# Temporary visualization outputs
+mosaic.png
+overview.png
+coverage.png
+verify.png
+tile_*.png
+tile_*.webp
+
+# Worker / Node
+node_modules/
+.wrangler/
+dist/
+
+# OS files
+.DS_Store
+Thumbs.db

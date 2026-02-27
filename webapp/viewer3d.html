@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SWTILES 3D Terrain Viewer</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1a2e;
+      color: #eee;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    #canvas-container {
+      width: 100%;
+      height: 100%;
+    }
+
+    #controls {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(0, 0, 0, 0.8);
+      padding: 15px;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      max-width: 300px;
+    }
+
+    #controls h2 {
+      font-size: 1rem;
+      margin-bottom: 10px;
+      color: #e94560;
+    }
+
+    .control-group {
+      margin-bottom: 10px;
+    }
+
+    .control-group label {
+      display: block;
+      margin-bottom: 4px;
+      color: #aaa;
+      font-size: 0.8rem;
+    }
+
+    .control-group input {
+      background: #0f3460;
+      border: 1px solid #1a1a2e;
+      color: #eee;
+      padding: 6px 10px;
+      border-radius: 4px;
+      width: 100%;
+      font-size: 0.9rem;
+    }
+
+    .control-row {
+      display: flex;
+      gap: 10px;
+    }
+
+    .control-row .control-group {
+      flex: 1;
+    }
+
+    button {
+      background: #e94560;
+      color: white;
+      border: none;
+      padding: 8px 15px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      width: 100%;
+      margin-top: 5px;
+    }
+
+    button:hover {
+      background: #ff6b6b;
+    }
+
+    button:disabled {
+      background: #555;
+      cursor: not-allowed;
+    }
+
+    .preset-buttons {
+      display: flex;
+      gap: 5px;
+      margin-top: 10px;
+    }
+
+    .preset-buttons button {
+      flex: 1;
+      padding: 6px 8px;
+      font-size: 0.8rem;
+    }
+
+    #status {
+      position: absolute;
+      bottom: 10px;
+      left: 10px;
+      background: rgba(0, 0, 0, 0.8);
+      padding: 10px 15px;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      font-family: monospace;
+    }
+
+    #loading {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0, 0, 0, 0.9);
+      padding: 30px 40px;
+      border-radius: 8px;
+      text-align: center;
+    }
+
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 4px solid #333;
+      border-top-color: #e94560;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 15px;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    #loading-text {
+      color: #aaa;
+    }
+
+    .slider-group {
+      margin-top: 10px;
+    }
+
+    .slider-group input[type="range"] {
+      width: 100%;
+      margin-top: 5px;
+    }
+
+    .slider-value {
+      float: right;
+      color: #e94560;
+    }
+  </style>
+</head>
+<body>
+  <div id="canvas-container"></div>
+
+  <div id="controls">
+    <h2>3D Terrain Viewer</h2>
+    <div class="control-row">
+      <div class="control-group">
+        <label>Center Easting</label>
+        <input type="number" id="input-e" value="674242">
+      </div>
+      <div class="control-group">
+        <label>Center Northing</label>
+        <input type="number" id="input-n" value="6580381">
+      </div>
+    </div>
+    <div class="control-group">
+      <label>Area Size (km)</label>
+      <input type="number" id="input-area-size" value="5" min="1" max="50" style="width: 80px;">
+    </div>
+    <button id="btn-load">Load Area</button>
+    <div class="preset-buttons">
+      <button id="btn-stockholm">Stockholm</button>
+      <button id="btn-kebnekaise">Kebnekaise</button>
+      <button id="btn-sarek">Sarek</button>
+    </div>
+    <div class="slider-group">
+      <label>Vertical Exaggeration <span class="slider-value" id="exag-value">2.0x</span></label>
+      <input type="range" id="exag-slider" min="0.5" max="10" step="0.5" value="2">
+    </div>
+    <div class="slider-group">
+      <label>Show Texture <span class="slider-value" id="texture-value">On</span></label>
+      <input type="range" id="texture-slider" min="0" max="1" step="1" value="1">
+    </div>
+    <div class="slider-group">
+      <label>Mesh Detail (Martini) <span class="slider-value" id="martini-value">10m error</span></label>
+      <input type="range" id="martini-slider" min="1" max="50" step="1" value="10">
+    </div>
+    <div id="mesh-stats" style="margin-top: 10px; font-size: 0.8rem; color: #aaa; padding: 8px; background: rgba(255,255,255,0.05); border-radius: 4px;"></div>
+  </div>
+
+  <div id="status">Ready</div>
+
+  <div id="loading" style="display: none;">
+    <div class="spinner"></div>
+    <div id="loading-text">Loading terrain...</div>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+      "@mapbox/martini": "https://cdn.jsdelivr.net/npm/@mapbox/martini@0.2.0/+esm"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import Martini from '@mapbox/martini';
+    import { SwtilesReader } from './swtiles.js';
+
+    // Configuration
+    const WORKER_URL = 'https://swtiles-proxy.tobias-cornvik.workers.dev';
+    const TERRAIN_FILE = 'Karta_Hojd_Sverige.swtiles';
+    const ORTHO_FILE = 'Karta_10000_webp.swtiles';
+
+    // Tile constants
+    const TILE_SIZE_M = 500;
+    const TILE_SIZE_PX = 500;
+
+    // Dynamic area size (will be set from input)
+    let areaSizeKm = 5;
+    let tilesPerSide = 10; // areaSizeKm * 1000 / TILE_SIZE_M
+    let areaSize = 5000;   // areaSizeKm * 1000
+
+    // Swedish locations (SWEREF 99 TM)
+    const LOCATIONS = {
+      stockholm: { e: 674242, n: 6580381 },
+      kebnekaise: { e: 642800, n: 7546500 },  // Highest peak in Sweden
+      sarek: { e: 608000, n: 7440000 },        // Mountain area
+    };
+
+    // Three.js objects
+    let scene, camera, renderer, controls;
+    let terrainMesh = null;
+    let verticalExaggeration = 2.0;
+    let martiniError = 10; // meters of allowed error
+
+    // Martini requires grid size of 2^n + 1
+    // We'll calculate an appropriate size based on area
+    let martiniGridSize = 1025; // Will be recalculated
+    let martini = null; // Will be reinitialized when grid size changes
+
+    // Readers
+    let terrainReader = null;
+    let orthoReader = null;
+
+    // DOM elements
+    const container = document.getElementById('canvas-container');
+    const statusEl = document.getElementById('status');
+    const loadingEl = document.getElementById('loading');
+    const loadingTextEl = document.getElementById('loading-text');
+    const inputE = document.getElementById('input-e');
+    const inputN = document.getElementById('input-n');
+
+    function updateStatus(text) {
+      statusEl.textContent = text;
+    }
+
+    function showLoading(text) {
+      loadingTextEl.textContent = text;
+      loadingEl.style.display = 'block';
+    }
+
+    function hideLoading() {
+      loadingEl.style.display = 'none';
+    }
+
+    /**
+     * Decode Terrain-RGB elevation value
+     * Format: elevation = -10000 + ((R * 256 * 256 + G * 256 + B) * 0.1)
+     */
+    function decodeTerrainRGB(r, g, b) {
+      return -10000 + ((r * 256 * 256 + g * 256 + b) * 0.1);
+    }
+
+    /**
+     * Initialize Three.js scene
+     */
+    function initThree() {
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x1a1a2e);
+
+      // Camera - use default 5km area for initial setup
+      camera = new THREE.PerspectiveCamera(
+        60,
+        container.clientWidth / container.clientHeight,
+        10,
+        100000
+      );
+      camera.position.set(areaSize * 0.8, areaSize * 0.5, areaSize * 0.8);
+
+      // Renderer
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(container.clientWidth, container.clientHeight);
+      renderer.setPixelRatio(window.devicePixelRatio);
+      container.appendChild(renderer.domElement);
+
+      // Controls
+      controls = new OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.05;
+      controls.maxPolarAngle = Math.PI / 2.1;
+      controls.target.set(areaSize / 2, 0, areaSize / 2);
+
+      // Lighting
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+      scene.add(ambientLight);
+
+      const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+      directionalLight.position.set(1, 1, 0.5);
+      scene.add(directionalLight);
+
+      // Grid helper (temporary) - will be updated when area loads
+      const gridHelper = new THREE.GridHelper(areaSize, 10, 0x444444, 0x222222);
+      gridHelper.position.set(areaSize / 2, 0, areaSize / 2);
+      gridHelper.name = 'gridHelper';
+      scene.add(gridHelper);
+
+      // Handle resize
+      window.addEventListener('resize', () => {
+        camera.aspect = container.clientWidth / container.clientHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(container.clientWidth, container.clientHeight);
+      });
+
+      animate();
+    }
+
+    /**
+     * Animation loop
+     */
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    /**
+     * Calculate the best Martini grid size for the given number of source pixels
+     * Must be 2^n + 1
+     */
+    function calculateMartiniGridSize(sourceSize) {
+      // Target around 1024-2048 grid size for good balance of quality and performance
+      // For very large areas, cap at 2049 to avoid memory issues
+      const maxGrid = 2049;
+      const minGrid = 257;
+
+      // Find the largest 2^n + 1 that doesn't exceed maxGrid
+      let gridSize = minGrid;
+      while (gridSize * 2 - 1 <= maxGrid && gridSize * 2 - 1 <= sourceSize) {
+        gridSize = gridSize * 2 - 1;
+      }
+      return gridSize;
+    }
+
+    /**
+     * Load terrain and orthophoto for an area
+     */
+    async function loadArea(centerE, centerN) {
+      showLoading('Initializing...');
+
+      // Update area size from input
+      const inputAreaSize = parseInt(document.getElementById('input-area-size').value) || 5;
+      areaSizeKm = Math.max(1, Math.min(50, inputAreaSize)); // Clamp 1-50 km
+      tilesPerSide = Math.ceil(areaSizeKm * 1000 / TILE_SIZE_M);
+      areaSize = tilesPerSide * TILE_SIZE_M;
+
+      // Calculate Martini grid size based on source data size
+      const sourceSize = tilesPerSide * TILE_SIZE_PX;
+      const newMartiniGridSize = calculateMartiniGridSize(sourceSize);
+
+      // Reset Martini if grid size changed
+      if (newMartiniGridSize !== martiniGridSize) {
+        martiniGridSize = newMartiniGridSize;
+        martini = null;
+      }
+
+      console.log(`Area: ${areaSizeKm}km = ${tilesPerSide}x${tilesPerSide} tiles, Martini grid: ${martiniGridSize}`);
+
+      try {
+        // Initialize readers if needed
+        if (!terrainReader) {
+          terrainReader = new SwtilesReader(`${WORKER_URL}/${TERRAIN_FILE}`);
+          await terrainReader.init();
+        }
+
+        if (!orthoReader) {
+          orthoReader = new SwtilesReader(`${WORKER_URL}/${ORTHO_FILE}`);
+          await orthoReader.init();
+        }
+
+        const terrainLevel = terrainReader.getLevel(0);
+        const orthoLevel = orthoReader.getLevel(0);
+
+        // Calculate tile range for area centered on the point
+        const halfArea = areaSize / 2;
+        const startE = centerE - halfArea;
+        const startN = centerN + halfArea; // Top-left (north is up)
+
+        // Get starting row/col
+        const { row: startRow, col: startCol } = terrainReader.coordToRowCol(
+          terrainLevel, startE, startN
+        );
+
+        console.log(`Loading ${tilesPerSide}x${tilesPerSide} tiles starting at row=${startRow}, col=${startCol}`);
+
+        const totalTiles = tilesPerSide * tilesPerSide;
+        const CONCURRENCY_LIMIT = 20; // Limit concurrent requests to avoid overwhelming the server
+
+        // Helper function to fetch with concurrency limit
+        async function fetchWithConcurrency(tasks, onProgress) {
+          const results = [];
+          let completed = 0;
+
+          // Process in batches
+          for (let i = 0; i < tasks.length; i += CONCURRENCY_LIMIT) {
+            const batch = tasks.slice(i, i + CONCURRENCY_LIMIT);
+            const batchResults = await Promise.all(batch.map(task => task()));
+            results.push(...batchResults);
+            completed += batchResults.length;
+            onProgress(completed);
+          }
+
+          return results;
+        }
+
+        // Build terrain tile fetch tasks
+        showLoading('Loading terrain tiles... 0/' + totalTiles);
+        const terrainTasks = [];
+        for (let r = 0; r < tilesPerSide; r++) {
+          for (let c = 0; c < tilesPerSide; c++) {
+            const row = startRow + r;
+            const col = startCol + c;
+            terrainTasks.push(async () => {
+              const tile = await terrainReader.getTile(0, row, col);
+              return { r, c, tile };
+            });
+          }
+        }
+
+        // Fetch terrain tiles with concurrency limit
+        const terrainResults = await fetchWithConcurrency(terrainTasks, (count) => {
+          showLoading(`Loading terrain tiles... ${count}/${totalTiles}`);
+        });
+
+        // Organize into 2D array
+        const terrainTiles = [];
+        for (let r = 0; r < tilesPerSide; r++) {
+          terrainTiles[r] = [];
+        }
+        for (const { r, c, tile } of terrainResults) {
+          terrainTiles[r][c] = tile;
+        }
+
+        // Build orthophoto tile fetch tasks
+        // IMPORTANT: Use actual terrain tile bounds, not requested coordinates
+        // The terrain and orthophoto grids have different origins, so we must
+        // calculate the geographic center of each terrain tile and use that
+        // to look up the corresponding orthophoto tile.
+        showLoading('Loading orthophoto tiles... 0/' + totalTiles);
+        const orthoTasks = [];
+        for (let r = 0; r < tilesPerSide; r++) {
+          for (let c = 0; c < tilesPerSide; c++) {
+            // Get the actual geographic bounds of this terrain tile
+            const terrainBounds = terrainReader.rowColToBounds(
+              terrainLevel,
+              startRow + r,
+              startCol + c
+            );
+
+            // Use the center of the terrain tile to find the matching orthophoto tile
+            const tileCenterE = (terrainBounds.minE + terrainBounds.maxE) / 2;
+            const tileCenterN = (terrainBounds.minN + terrainBounds.maxN) / 2;
+
+            const { row: oRow, col: oCol } = orthoReader.coordToRowCol(orthoLevel, tileCenterE, tileCenterN);
+            orthoTasks.push(async () => {
+              const tile = await orthoReader.getTile(0, oRow, oCol);
+              return { r, c, tile };
+            });
+          }
+        }
+
+        // Fetch orthophoto tiles with concurrency limit
+        const orthoResults = await fetchWithConcurrency(orthoTasks, (count) => {
+          showLoading(`Loading orthophoto tiles... ${count}/${totalTiles}`);
+        });
+
+        // Organize into 2D array
+        const orthoTiles = [];
+        for (let r = 0; r < tilesPerSide; r++) {
+          orthoTiles[r] = [];
+        }
+        for (const { r, c, tile } of orthoResults) {
+          orthoTiles[r][c] = tile;
+        }
+
+        // Process terrain data into heightmap
+        showLoading('Processing elevation data...');
+        const heightData = await processTerrainTiles(terrainTiles);
+
+        // Create combined texture
+        showLoading('Creating texture...');
+        const texture = await createCombinedTexture(orthoTiles);
+
+        // Build 3D mesh
+        showLoading('Building 3D mesh...');
+        buildTerrainMesh(heightData, texture);
+
+        hideLoading();
+        updateStatus(`Loaded ${areaSizeKm}x${areaSizeKm} km at E:${centerE}, N:${centerN} | Elevation: ${heightData.minElev.toFixed(0)}m - ${heightData.maxElev.toFixed(0)}m`);
+
+      } catch (err) {
+        console.error('Failed to load area:', err);
+        hideLoading();
+        updateStatus(`Error: ${err.message}`);
+      }
+    }
+
+    /**
+     * Process terrain tiles into a heightmap array
+     * Resamples to martiniGridSize for optimal mesh generation
+     */
+    async function processTerrainTiles(tiles) {
+      const sourceTotalSize = tilesPerSide * TILE_SIZE_PX;
+      const targetSize = martiniGridSize;
+
+      // First, create full-resolution heightmap from tiles
+      const sourceHeights = new Float32Array(sourceTotalSize * sourceTotalSize);
+      let minElev = Infinity;
+      let maxElev = -Infinity;
+
+      for (let tileRow = 0; tileRow < tilesPerSide; tileRow++) {
+        for (let tileCol = 0; tileCol < tilesPerSide; tileCol++) {
+          const tile = tiles[tileRow][tileCol];
+
+          if (!tile) {
+            // Fill with 0 for missing tiles
+            for (let py = 0; py < TILE_SIZE_PX; py++) {
+              for (let px = 0; px < TILE_SIZE_PX; px++) {
+                const globalX = tileCol * TILE_SIZE_PX + px;
+                const globalY = tileRow * TILE_SIZE_PX + py;
+                sourceHeights[globalY * sourceTotalSize + globalX] = 0;
+              }
+            }
+            continue;
+          }
+
+          // Decode tile image
+          const img = await createImageBitmap(tile.blob);
+          const canvas = new OffscreenCanvas(TILE_SIZE_PX, TILE_SIZE_PX);
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0);
+          const imageData = ctx.getImageData(0, 0, TILE_SIZE_PX, TILE_SIZE_PX);
+          const pixels = imageData.data;
+
+          for (let py = 0; py < TILE_SIZE_PX; py++) {
+            for (let px = 0; px < TILE_SIZE_PX; px++) {
+              const i = (py * TILE_SIZE_PX + px) * 4;
+              const r = pixels[i];
+              const g = pixels[i + 1];
+              const b = pixels[i + 2];
+
+              const elevation = decodeTerrainRGB(r, g, b);
+              minElev = Math.min(minElev, elevation);
+              maxElev = Math.max(maxElev, elevation);
+
+              const globalX = tileCol * TILE_SIZE_PX + px;
+              const globalY = tileRow * TILE_SIZE_PX + py;
+              sourceHeights[globalY * sourceTotalSize + globalX] = elevation;
+            }
+          }
+        }
+      }
+
+      // Resample to Martini grid size (bilinear interpolation)
+      const heights = new Float32Array(targetSize * targetSize);
+      const scale = (sourceTotalSize - 1) / (targetSize - 1);
+
+      for (let y = 0; y < targetSize; y++) {
+        for (let x = 0; x < targetSize; x++) {
+          const srcX = x * scale;
+          const srcY = y * scale;
+
+          const x0 = Math.floor(srcX);
+          const y0 = Math.floor(srcY);
+          const x1 = Math.min(x0 + 1, sourceTotalSize - 1);
+          const y1 = Math.min(y0 + 1, sourceTotalSize - 1);
+
+          const fx = srcX - x0;
+          const fy = srcY - y0;
+
+          // Bilinear interpolation
+          const h00 = sourceHeights[y0 * sourceTotalSize + x0];
+          const h10 = sourceHeights[y0 * sourceTotalSize + x1];
+          const h01 = sourceHeights[y1 * sourceTotalSize + x0];
+          const h11 = sourceHeights[y1 * sourceTotalSize + x1];
+
+          const h = h00 * (1 - fx) * (1 - fy) +
+                    h10 * fx * (1 - fy) +
+                    h01 * (1 - fx) * fy +
+                    h11 * fx * fy;
+
+          heights[y * targetSize + x] = h;
+        }
+      }
+
+      return { heights, totalSize: targetSize, minElev, maxElev };
+    }
+
+    /**
+     * Create combined texture from orthophoto tiles
+     */
+    async function createCombinedTexture(tiles) {
+      const totalSize = tilesPerSide * TILE_SIZE_PX;
+      const canvas = new OffscreenCanvas(totalSize, totalSize);
+      const ctx = canvas.getContext('2d');
+
+      // Fill with dark gray for missing tiles
+      ctx.fillStyle = '#333';
+      ctx.fillRect(0, 0, totalSize, totalSize);
+
+      for (let tileRow = 0; tileRow < tilesPerSide; tileRow++) {
+        for (let tileCol = 0; tileCol < tilesPerSide; tileCol++) {
+          const tile = tiles[tileRow][tileCol];
+          if (!tile) continue;
+
+          const img = await createImageBitmap(tile.blob);
+          const x = tileCol * TILE_SIZE_PX;
+          const y = tileRow * TILE_SIZE_PX;
+          ctx.drawImage(img, x, y);
+        }
+      }
+
+      const blob = await canvas.convertToBlob({ type: 'image/png' });
+      const url = URL.createObjectURL(blob);
+      const texture = new THREE.TextureLoader().load(url);
+      texture.colorSpace = THREE.SRGBColorSpace;
+
+      return texture;
+    }
+
+    /**
+     * Build terrain mesh from heightmap using Martini algorithm
+     * Creates an optimized TIN (Triangulated Irregular Network) that uses
+     * more triangles in complex terrain and fewer in flat areas.
+     */
+    function buildTerrainMesh(heightData, texture) {
+      // Remove existing mesh
+      if (terrainMesh) {
+        scene.remove(terrainMesh);
+        terrainMesh.geometry.dispose();
+        terrainMesh.material.dispose();
+      }
+
+      const { heights, totalSize, minElev, maxElev } = heightData;
+      const gridSize = totalSize; // Should be 2^n + 1
+
+      // Initialize Martini once (it pre-computes indices for the grid size)
+      if (!martini) {
+        martini = new Martini(gridSize);
+      }
+
+      // Create terrain data for Martini
+      // Martini expects terrain values as Float32Array
+      const tile = martini.createTile(heights);
+
+      // Generate mesh with specified error tolerance
+      // Error is in the same units as height data (meters)
+      const mesh = tile.getMesh(martiniError);
+
+      const { vertices: martiniVertices, triangles } = mesh;
+
+      // martiniVertices is [x0, y0, x1, y1, ...] grid coordinates
+      // triangles is indices into vertices
+
+      const numVertices = martiniVertices.length / 2;
+      const numTriangles = triangles.length / 3;
+
+      // Create Three.js BufferGeometry
+      const geometry = new THREE.BufferGeometry();
+
+      // Build position and UV arrays
+      const positions = new Float32Array(numVertices * 3);
+      const uvs = new Float32Array(numVertices * 2);
+
+      const cellSize = areaSize / (gridSize - 1); // World units per grid cell
+
+      for (let i = 0; i < numVertices; i++) {
+        const gridX = martiniVertices[i * 2];
+        const gridY = martiniVertices[i * 2 + 1];
+
+        // World position (X, Z in Three.js coordinate system)
+        const worldX = gridX * cellSize;
+        const worldZ = gridY * cellSize;
+
+        // Get elevation from heightmap
+        const heightIndex = gridY * gridSize + gridX;
+        const elevation = (heights[heightIndex] - minElev) * verticalExaggeration;
+
+        positions[i * 3] = worldX;
+        positions[i * 3 + 1] = elevation;
+        positions[i * 3 + 2] = worldZ;
+
+        // UV coordinates (0 to 1)
+        // Flip V coordinate: texture origin is bottom-left, heightmap origin is top-left
+        uvs[i * 2] = gridX / (gridSize - 1);
+        uvs[i * 2 + 1] = 1 - (gridY / (gridSize - 1));
+      }
+
+      geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+      geometry.setIndex(new THREE.BufferAttribute(triangles, 1));
+      geometry.computeVertexNormals();
+
+      const material = new THREE.MeshStandardMaterial({
+        map: texture,
+        side: THREE.DoubleSide,
+        wireframe: false,
+      });
+
+      terrainMesh = new THREE.Mesh(geometry, material);
+      terrainMesh.userData.heightData = heightData;
+      terrainMesh.userData.texture = texture;
+      scene.add(terrainMesh);
+
+      // Update mesh stats display
+      const meshStatsEl = document.getElementById('mesh-stats');
+      meshStatsEl.textContent = `Triangles: ${numTriangles.toLocaleString()} | Vertices: ${numVertices.toLocaleString()}`;
+
+      // Reset camera
+      const elevRange = (maxElev - minElev) * verticalExaggeration;
+      controls.target.set(areaSize / 2, elevRange / 2, areaSize / 2);
+      camera.position.set(
+        areaSize * 0.8,
+        elevRange + 500,
+        areaSize * 0.8
+      );
+      controls.update();
+    }
+
+    /**
+     * Update vertical exaggeration
+     */
+    function updateExaggeration(value) {
+      verticalExaggeration = value;
+      document.getElementById('exag-value').textContent = `${value.toFixed(1)}x`;
+
+      if (terrainMesh && terrainMesh.userData.heightData) {
+        // Rebuild mesh with new exaggeration
+        const texture = terrainMesh.userData.texture;
+        buildTerrainMesh(terrainMesh.userData.heightData, texture);
+      }
+    }
+
+    /**
+     * Update Martini error tolerance and rebuild mesh
+     */
+    function updateMartiniError(value) {
+      martiniError = value;
+      document.getElementById('martini-value').textContent = `${value}m error`;
+
+      if (terrainMesh && terrainMesh.userData.heightData) {
+        // Rebuild mesh with new error tolerance
+        const texture = terrainMesh.userData.texture;
+        buildTerrainMesh(terrainMesh.userData.heightData, texture);
+      }
+    }
+
+    /**
+     * Initialize the viewer
+     */
+    async function init() {
+      initThree();
+
+      // Button events
+      document.getElementById('btn-load').addEventListener('click', () => {
+        const e = parseFloat(inputE.value);
+        const n = parseFloat(inputN.value);
+        if (!isNaN(e) && !isNaN(n)) {
+          loadArea(e, n);
+        }
+      });
+
+      document.getElementById('btn-stockholm').addEventListener('click', () => {
+        inputE.value = LOCATIONS.stockholm.e;
+        inputN.value = LOCATIONS.stockholm.n;
+        loadArea(LOCATIONS.stockholm.e, LOCATIONS.stockholm.n);
+      });
+
+      document.getElementById('btn-kebnekaise').addEventListener('click', () => {
+        inputE.value = LOCATIONS.kebnekaise.e;
+        inputN.value = LOCATIONS.kebnekaise.n;
+        loadArea(LOCATIONS.kebnekaise.e, LOCATIONS.kebnekaise.n);
+      });
+
+      document.getElementById('btn-sarek').addEventListener('click', () => {
+        inputE.value = LOCATIONS.sarek.e;
+        inputN.value = LOCATIONS.sarek.n;
+        loadArea(LOCATIONS.sarek.e, LOCATIONS.sarek.n);
+      });
+
+      // Exaggeration slider
+      document.getElementById('exag-slider').addEventListener('input', (e) => {
+        updateExaggeration(parseFloat(e.target.value));
+      });
+
+      // Texture toggle
+      document.getElementById('texture-slider').addEventListener('input', (e) => {
+        const showTexture = e.target.value === '1';
+        document.getElementById('texture-value').textContent = showTexture ? 'On' : 'Off';
+        if (terrainMesh) {
+          terrainMesh.material.map = showTexture ? terrainMesh.userData.texture : null;
+          terrainMesh.material.color = showTexture ? new THREE.Color(0xffffff) : new THREE.Color(0x88aa88);
+          terrainMesh.material.needsUpdate = true;
+        }
+      });
+
+      // Martini error tolerance slider
+      document.getElementById('martini-slider').addEventListener('input', (e) => {
+        updateMartiniError(parseFloat(e.target.value));
+      });
+
+      updateStatus('Ready - Select a location or enter coordinates');
+    }
+
+    init();
+  </script>
+</body>
+</html>
